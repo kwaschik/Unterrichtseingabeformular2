@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>Unterrichtseingabeformular</title>
+        <script src="js/airtable.browser.js"></script>
+        <script src="js/formular.js"></script>
+        <link href="css/bulma.min.css" rel="stylesheet">
+        <style>
+            select, .select {
+                width: 100%;
+                /* safari, TODO testing */
+                text-rendering: auto !important;
+
+            }
+        </style>
+    </head>
+    <body>
+        <div id="login" class="modal">
+            <div class="modal-background"></div>
+            <div class="modal-content">
+                <div class="box">
+                    <div class="field">
+                        <label class="label">Login (DEBUG-Info: Base prüfen)</label>
+                        <div class="control">
+                            <input id="apiKey" class="input" type="text" placeholder="Zum Anmelden bitte Airtable Key eingeben ...">
+                        </div>
+                    </div>
+                    <div class="field is-grouped is-grouped-right">
+                        <div class="control">
+                            <button class="button is-primary" onclick="login()">Ok</button>
+                        </div>
+                        
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div id="anime" class="modal">
+            <div class="modal-background"></div>
+            <div class="modal-content">
+                <progress class="progress is-medium is-primary"></progress>
+            </div>
+        </div>
+        <div id="elm-app"></div>
+        <script>
+            // TODO, Meldungen alle mit bulma notifications und/oder modals machen?
+            let base;
+            // modal zeigen (Animation, Login usw.)
+            function show_modal(id) {
+                document.getElementById(id).className = "modal is-active";
+            }
+            // modal verstecken
+            function hide_modal(id) {
+                document.getElementById(id).className = "modal";
+            }
+
+            // Daten aus einer gegebenen Tabelle lesen
+            // TODO: wie aufs nötigste beschränken??
+            function read(table, recArray, f) {
+                base(table).select().eachPage((records, nextPage) => {
+                    records.forEach(rec => {
+                        //data[table].records.push(rec);
+                        recArray.push(rec);
+                    });
+                    nextPage();
+                }, /* "fertig"-callback */ f);
+            }
+            // Initialisierung anh. der Vorgabe, welche Kategorie usw. es gibt,
+            // Daten in "store" einlesen und alle Optionslisten befüllen
+            function load(tables) {
+                hide_modal("login"); show_modal("anime");
+                let data = {};
+                let done = [];
+                tables.forEach(table => {
+                    data[table] = {records: []};
+                    read(table, data[table].records, (error) => {
+                        if (error) {
+                            done.push(table);
+                            if (done.length === tables.length) {
+                                hide_modal("anime"); show_modal("login");
+                                console.error(error);
+                                alert(error);
+                            }
+                            return;
+                        } else {
+                            done.push(table);
+                            if (done.length === tables.length) {
+                                hide_modal("anime");
+                                let app = Elm.Main.init({
+                                    node: document.getElementById("elm-app"),
+                                    flags: data
+                                });
+                                // elm sagt: "save!"
+                                app.ports.save.subscribe(msg => {
+                                    const record = JSON.parse(msg);
+                                    // Pflichtfelder prüfen
+                                    if (!record["Dozent"]   || record["Dozent"].length === 0 ||
+                                        !record["Jahrgang"] || record["Jahrgang"].length === 0 ||
+                                        !record["Datum"]    || record["Datum"] === "" ||
+                                        !record["Fach"]     || record["Fach"].length === 0) {
+                                        console.error('"Dozent", "Jahrgang", "Datum" und "Fach" sind Pflichtangaben. Mindestens eines der genannten Felder ist nicht gefüllt.');
+                                        alert('"Dozent", "Jahrgang", "Datum" und "Fach" sind Pflichtangaben. Mindestens eines der genannten Felder ist nicht gefüllt.');
+                                        return;
+                                    }
+         
+                                    // Speichern 
+                                    try {
+                                        base('Klassenbuch').create(record, (err, rec) => {
+                                            if (err) {
+                                                alert(err);
+                                                return;
+                                            }
+                                            alert('Ein neuer Datensatz mit der ID: "' + rec.getId() + '" wurde angelegt.');
+                                            
+                                        });
+                                    } catch (error) {
+                                        console.error(error);
+                                        alert("Fehler: Die Kommunikation mit airtable ist fehlgeschlagen, der Datensatz konnte nicht gespeichert werden!");
+                                    }
+                                });
+                            }
+                        }
+                    });
+                });
+            }
+
+            function login() {
+                try {
+                    const Airtable = require("airtable");
+                    base = new Airtable({
+                        apiKey: document.getElementById("apiKey").value,
+                    }).base('appPmV2jYTTx2xbQf');
+                    // alle relevanten Tabellen laden
+                    load(["Fach", "Fachbereich", "Thema", "Themenbereich"
+                         ,"Dysfunktionen", "Pathologie", "Jahrgang", "Dozent"]);
+                } catch (error) { 
+                    console.error(error);
+                    alert(error);
+                }
+            }
+
+            show_modal("login");
+        </script>
+    </body>
+</html>
